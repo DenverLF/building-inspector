@@ -9,16 +9,16 @@ const schedule = [
 ]
 
 export default async function DashboardPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  let p: Profile | null = null
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      p = data as Profile | null
+    }
+  } catch { /* show page with defaults if Supabase unavailable */ }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user!.id)
-    .single()
-
-  const p = profile as Profile | null
   const initials = getInitials(p?.full_name)
 
   return (
