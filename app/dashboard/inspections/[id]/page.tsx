@@ -5,7 +5,8 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { INSPECTORS } from '@/lib/inspectors'
-import type { Inspection, InspectionPhoto, InspectionStage } from '@/lib/types'
+import { logActivity } from '@/lib/activity'
+import type { Inspection, InspectionPhoto, InspectionStage, ActivityLog } from '@/lib/types'
 
 const STAGE_LABEL: Record<string, string> = {
   fire_installation: 'Fire Installation',
@@ -53,6 +54,7 @@ export default function InspectionDetailPage() {
   const [inspection, setInspection] = useState<Inspection | null>(null)
   const [photos, setPhotos] = useState<InspectionPhoto[]>([])
   const [photoUrls, setPhotoUrls] = useState<string[]>([])
+  const [history, setHistory] = useState<ActivityLog[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -69,6 +71,17 @@ export default function InspectionDetailPage() {
     inspected_at: '',
     notes: '',
   })
+
+  async function loadHistory() {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('activity_logs')
+      .select('*')
+      .eq('entity_id', id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+    setHistory((data as ActivityLog[]) ?? [])
+  }
 
   useEffect(() => {
     async function load() {
@@ -117,6 +130,8 @@ export default function InspectionDetailPage() {
       setLoading(false)
     }
     load()
+    loadHistory()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   function setField(field: string, value: string) {
@@ -143,17 +158,43 @@ export default function InspectionDetailPage() {
     if (err) {
       setError(err.message)
     } else {
+      const changes: string[] = []
+      if (inspection) {
+        if (form.outcome !== inspection.outcome) {
+          const labels: Record<string, string> = { pass: 'Pass', fail: 'Fail', attention_required: 'Attention Required', pending: 'Pending' }
+          changes.push(`outcome → ${labels[form.outcome]}`)
+        }
+        if (form.stage !== inspection.stage) changes.push(`stage → ${STAGE_LABEL[form.stage]}`)
+        if (form.inspector_name !== (inspection.inspector_name ?? '')) changes.push(`inspector → ${form.inspector_name || 'unassigned'}`)
+        if (form.address !== (inspection.address ?? '')) changes.push('address')
+      }
+      await logActivity({
+        entity_type: 'inspection',
+        entity_id: id,
+        entity_title: `${STAGE_LABEL[form.stage]}${form.address ? ` at ${form.address}` : ''}`,
+        action: changes.some(c => c.startsWith('outcome')) ? 'outcome_changed' : 'updated',
+        description: changes.length > 0 ? `Updated: ${changes.join(', ')}` : 'Inspection details updated',
+        performed_by_name: form.inspector_name || null,
+      })
       setEditing(false)
       const { data } = await supabase.from('inspections').select('*').eq('id', id).single()
       if (data) setInspection(data as Inspection)
+      await loadHistory()
     }
     setSaving(false)
   }
 
   async function handleDelete() {
     setDeleting(true)
+    await logActivity({
+      entity_type: 'inspection',
+      entity_id: id,
+      entity_title: inspection ? `${STAGE_LABEL[inspection.stage]}${inspection.address ? ` at ${inspection.address}` : ''}` : '',
+      action: 'deleted',
+      description: 'Inspection deleted',
+      performed_by_name: inspection?.inspector_name ?? null,
+    })
     const supabase = createClient()
-    // Delete photos from storage
     for (const p of photos) {
       await supabase.storage.from('inspection-photos').remove([p.storage_path])
     }
@@ -397,6 +438,31 @@ export default function InspectionDetailPage() {
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
                     </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* View: History */}
+            {history.length > 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">History</p>
+                <div className="space-y-3">
+                  {history.map(entry => (
+                    <div key={entry.id} className="flex items-start gap-3">
+                      <span className="text-gray-400 text-sm w-4 flex-shrink-0 mt-0.5">
+                        {entry.action === 'created' ? '✦' : entry.action === 'deleted' ? '✕' : '✎'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-700">{entry.description}</p>
+                        {entry.performed_by_name && (
+                          <p className="text-xs text-[#1a1745] font-medium">{entry.performed_by_name}</p>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-400 flex-shrink-0">
+                        {new Date(entry.created_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>

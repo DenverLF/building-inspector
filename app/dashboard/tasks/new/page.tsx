@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { INSPECTORS } from '@/lib/inspectors'
+import { logActivity } from '@/lib/activity'
 
 const STAGES = [
   { value: 'fire_installation', label: 'Fire Installation' },
@@ -45,7 +46,7 @@ export default function NewTaskPage() {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
-    const { error: err } = await supabase.from('tasks').insert({
+    const { data: inserted, error: err } = await supabase.from('tasks').insert({
       title: form.title,
       address: form.address || null,
       assigned_inspector: form.assigned_inspector || null,
@@ -55,12 +56,20 @@ export default function NewTaskPage() {
       inspection_stage: form.inspection_stage || null,
       description: form.description || null,
       status: 'pending',
-    })
+    }).select('id').single()
 
-    if (err) {
-      setError(err.message)
+    if (err || !inserted) {
+      setError(err?.message ?? 'Failed to create task.')
       setLoading(false)
     } else {
+      await logActivity({
+        entity_type: 'task',
+        entity_id: inserted.id,
+        entity_title: form.title,
+        action: 'created',
+        description: `Task created${form.assigned_inspector ? ` and assigned to ${form.assigned_inspector}` : ''}`,
+        performed_by_name: form.assigned_inspector || null,
+      })
       router.push('/dashboard/tasks')
       router.refresh()
     }

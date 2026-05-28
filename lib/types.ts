@@ -60,3 +60,17 @@ export interface KmLog {
   created_by: string | null
   created_at: string
 }
+
+export type ActivityAction = 'created' | 'updated' | 'status_changed' | 'outcome_changed' | 'deleted'
+
+export interface ActivityLog {
+  id: string
+  entity_type: 'task' | 'inspection' | 'km_log'
+  entity_id: string
+  entity_title: string | null
+  action: ActivityAction
+  description: string
+  performed_by: string | null
+  performed_by_name: string | null
+  created_at: string
+}
