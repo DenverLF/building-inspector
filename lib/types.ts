@@ -47,3 +47,16 @@ export interface InspectionPhoto {
   storage_path: string
   created_at: string
 }
+
+export interface KmLog {
+  id: string
+  trip_date: string
+  inspector_name: string | null
+  start_location: string
+  end_location: string
+  distance_km: number
+  purpose: string | null
+  notes: string | null
+  created_by: string | null
+  created_at: string
+}
