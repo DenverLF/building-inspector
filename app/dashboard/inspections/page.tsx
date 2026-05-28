@@ -1,45 +1,83 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
+import type { Inspection } from '@/lib/types'
 
-const TABS = ['All', 'Assigned', 'Completed', 'Overdue'] as const
+const TABS = ['All', 'Today', 'Pass', 'Fail', 'Attention'] as const
 type Tab = typeof TABS[number]
 
-const STATUS_STYLE: Record<string, string> = {
-  Scheduled: 'bg-blue-100 text-blue-700',
-  Pending: 'bg-amber-100 text-amber-700',
-  Overdue: 'bg-red-100 text-red-600',
-  Completed: 'bg-green-100 text-green-700',
+const STAGE_LABEL: Record<string, string> = {
+  fire_installation: 'Fire Installation',
+  trench: 'Trench',
+  drainage: 'Drainage',
+  permission_to_use: 'Permission to Use',
+  occupation: 'Occupation',
 }
 
-const SAMPLE = [
-  { address: '123 Main Street', type: 'Residential', subtype: 'Foundation', status: 'Scheduled', date: 'Today 09:00', assigned: true },
-  { address: '456 Oak Avenue', type: 'Commercial', subtype: 'Electrical', status: 'Scheduled', date: 'Today 11:00', assigned: true },
-  { address: '789 Pine Road', type: 'Residential', subtype: 'Final', status: 'Scheduled', date: 'Today 14:00', assigned: true },
-  { address: '321 Cedar Lane', type: 'Residential', subtype: 'Plumbing', status: 'Pending', date: 'Tomorrow 09:00', assigned: false },
-  { address: '654 Maple Drive', type: 'Commercial', subtype: 'Structural', status: 'Overdue', date: 'Tomorrow 11:00', assigned: false },
-]
+const STAGE_COLOR: Record<string, string> = {
+  fire_installation: 'bg-red-100 text-red-700',
+  trench: 'bg-yellow-100 text-yellow-700',
+  drainage: 'bg-blue-100 text-blue-700',
+  permission_to_use: 'bg-purple-100 text-purple-700',
+  occupation: 'bg-green-100 text-green-700',
+}
+
+const OUTCOME_STYLE: Record<string, string> = {
+  pass: 'bg-green-100 text-green-700',
+  fail: 'bg-red-100 text-red-600',
+  attention_required: 'bg-orange-100 text-orange-700',
+  pending: 'bg-gray-100 text-gray-500',
+}
+
+const OUTCOME_LABEL: Record<string, string> = {
+  pass: 'Pass',
+  fail: 'Fail',
+  attention_required: 'Attention',
+  pending: 'Pending',
+}
 
 export default function InspectionsPage() {
+  const [inspections, setInspections] = useState<Inspection[]>([])
+  const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('All')
   const [search, setSearch] = useState('')
 
-  const filtered = SAMPLE.filter(item => {
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('inspections')
+        .select('*')
+        .order('inspected_at', { ascending: false })
+      setInspections((data as Inspection[]) ?? [])
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const today = new Date().toISOString().split('T')[0]
+
+  const filtered = inspections.filter(i => {
+    const matchesSearch =
+      !search ||
+      (i.address ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      (i.inspector_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      STAGE_LABEL[i.stage]?.toLowerCase().includes(search.toLowerCase())
+
     const matchesTab =
       tab === 'All' ||
-      (tab === 'Assigned' && item.assigned) ||
-      (tab === 'Completed' && item.status === 'Completed') ||
-      (tab === 'Overdue' && item.status === 'Overdue')
-    const matchesSearch =
-      item.address.toLowerCase().includes(search.toLowerCase()) ||
-      item.type.toLowerCase().includes(search.toLowerCase())
-    return matchesTab && matchesSearch
+      (tab === 'Today' && i.inspected_at.startsWith(today)) ||
+      (tab === 'Pass' && i.outcome === 'pass') ||
+      (tab === 'Fail' && i.outcome === 'fail') ||
+      (tab === 'Attention' && i.outcome === 'attention_required')
+
+    return matchesSearch && matchesTab
   })
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-[#1a1745] px-5 pt-10 pb-5">
         <div className="flex items-center justify-between">
           <h1 className="text-white text-xl font-bold">Inspections</h1>
@@ -63,25 +101,18 @@ export default function InspectionsPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search inspections..."
-            className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-10 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm"
+            className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm"
           />
-          <button className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-            </svg>
-          </button>
         </div>
 
-        {/* Filter tabs */}
+        {/* Tabs */}
         <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
           {TABS.map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap flex-shrink-0 transition-colors ${
-                tab === t
-                  ? 'bg-[#1a1745] text-white'
-                  : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
+                tab === t ? 'bg-[#1a1745] text-white' : 'bg-white text-gray-500 border border-gray-200'
               }`}
             >
               {t}
@@ -90,43 +121,45 @@ export default function InspectionsPage() {
         </div>
 
         {/* List */}
-        <div className="space-y-3">
-          {filtered.length === 0 && (
-            <div className="bg-white rounded-2xl p-8 text-center text-gray-400 text-sm shadow-sm">
-              No inspections found
-            </div>
-          )}
-          {filtered.map((item, i) => (
-            <div key={i} className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#1a1745]/10 flex items-center justify-center flex-shrink-0">
-                <svg className="w-5 h-5 text-[#1a1745]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                </svg>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-gray-900 font-bold text-sm truncate">{item.address}</p>
-                <p className="text-gray-400 text-xs mt-0.5">{item.type} • {item.subtype}</p>
-                <div className="flex items-center gap-1 mt-1">
-                  <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <p className="text-gray-400 text-xs">{item.date}</p>
-                  {item.assigned && (
-                    <>
-                      <svg className="w-3 h-3 text-gray-400 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                      <p className="text-gray-400 text-xs">Assigned</p>
-                    </>
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="bg-white rounded-2xl p-4 shadow-sm animate-pulse h-24" />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 text-center text-gray-400 text-sm shadow-sm">
+            {inspections.length === 0
+              ? 'No inspections yet — tap + New to log one'
+              : 'No inspections match this filter'}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map(insp => (
+              <Link key={insp.id} href={`/dashboard/inspections/${insp.id}`}>
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STAGE_COLOR[insp.stage]}`}>
+                      {STAGE_LABEL[insp.stage]}
+                    </span>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${OUTCOME_STYLE[insp.outcome]}`}>
+                      {OUTCOME_LABEL[insp.outcome]}
+                    </span>
+                  </div>
+                  {insp.address && (
+                    <p className="text-gray-800 font-semibold text-sm mb-1">{insp.address}</p>
                   )}
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-[#1a1745] font-medium">{insp.inspector_name ?? '—'}</span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(insp.inspected_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${STATUS_STYLE[item.status]}`}>
-                {item.status}
-              </span>
-            </div>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
