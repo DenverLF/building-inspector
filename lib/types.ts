@@ -25,3 +25,25 @@ export interface Task {
   created_at: string
   updated_at: string
 }
+
+export type InspectionOutcome = 'pass' | 'fail' | 'attention_required' | 'pending'
+
+export interface Inspection {
+  id: string
+  task_id: string | null
+  stage: InspectionStage
+  outcome: InspectionOutcome
+  address: string | null
+  inspector_name: string | null
+  created_by: string | null
+  notes: string | null
+  inspected_at: string
+  created_at: string
+}
+
+export interface InspectionPhoto {
+  id: string
+  inspection_id: string
+  storage_path: string
+  created_at: string
+}
