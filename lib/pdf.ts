@@ -1,5 +1,5 @@
 // PDF generation helpers — runs client-side only (browser)
-import type { Inspection, KmLog } from '@/lib/types'
+import type { Inspection, KmLog, Notice } from '@/lib/types'
 
 const STAGE_LABEL: Record<string, string> = {
   fire_installation: 'Fire Installation',
@@ -179,4 +179,160 @@ export async function generateKmReport(
 
   footer(doc)
   doc.save(`km-log-${month}.pdf`)
+}
+
+export async function generateNotice(notice: Notice) {
+  const { jsPDF } = await import('jspdf')
+
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+
+  // Header bar
+  doc.setFillColor(26, 23, 69)
+  doc.rect(0, 0, 210, 32, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFontSize(16)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Municipality of Excellence', 14, 12)
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text('Building Inspectorate', 14, 20)
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text('NON-COMPLIANCE NOTICE', 196, 12, { align: 'right' })
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Ref: ${notice.reference_number}`, 196, 20, { align: 'right' })
+  doc.setTextColor(0, 0, 0)
+
+  let y = 44
+
+  // Status badge
+  const statusColor: Record<string, [number, number, number]> = {
+    draft: [107, 114, 128],
+    sent: [59, 130, 246],
+    resolved: [34, 197, 94],
+  }
+  doc.setFillColor(...statusColor[notice.status])
+  doc.roundedRect(14, y - 5, 24, 7, 2, 2, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFontSize(7)
+  doc.setFont('helvetica', 'bold')
+  doc.text(notice.status.toUpperCase(), 26, y, { align: 'center' })
+  doc.setTextColor(0, 0, 0)
+  y += 8
+
+  // Issued date
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(100, 100, 100)
+  doc.text(`Issued: ${new Date(notice.created_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}`, 14, y)
+  if (notice.sent_at) {
+    doc.text(`Sent: ${new Date(notice.sent_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}`, 110, y)
+  }
+  doc.setTextColor(0, 0, 0)
+  y += 10
+
+  // Separator line
+  doc.setDrawColor(200, 200, 200)
+  doc.line(14, y, 196, y)
+  y += 8
+
+  // Property owner section
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'bold')
+  doc.text('ADDRESSED TO', 14, y)
+  y += 6
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.text(notice.property_owner_name ?? 'The Property Owner / Responsible Party', 14, y)
+  y += 6
+  if (notice.property_owner_email) {
+    doc.setFontSize(9)
+    doc.setTextColor(100, 100, 100)
+    doc.text(notice.property_owner_email, 14, y)
+    doc.setTextColor(0, 0, 0)
+    y += 6
+  }
+  y += 4
+
+  // Site details box
+  doc.setFillColor(248, 247, 255)
+  doc.roundedRect(14, y, 182, notice.inspection_date ? 28 : 20, 3, 3, 'F')
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(80, 80, 80)
+  doc.text('SITE ADDRESS', 20, y + 7)
+  doc.text('INSPECTOR', 110, y + 7)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(0, 0, 0)
+  doc.text(notice.site_address, 20, y + 14)
+  doc.text(notice.inspector_name ?? '—', 110, y + 14)
+  if (notice.inspection_date) {
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(80, 80, 80)
+    doc.text('DATE OF INSPECTION', 20, y + 21)
+    doc.text('STAGE', 110, y + 21)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(0, 0, 0)
+    doc.text(new Date(notice.inspection_date + 'T00:00:00').toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' }), 20, y + 27)
+    doc.text(STAGE_LABEL[notice.stage ?? ''] ?? '—', 110, y + 27)
+    y += 36
+  } else {
+    y += 28
+  }
+  y += 6
+
+  // Non-compliance details
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.text('NON-COMPLIANCE DETAILS', 14, y)
+  y += 6
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  const detailLines = doc.splitTextToSize(notice.non_compliance_details, 182) as string[]
+  doc.text(detailLines, 14, y)
+  y += detailLines.length * 5 + 8
+
+  // Corrective actions
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.text('REQUIRED CORRECTIVE ACTIONS', 14, y)
+  y += 6
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  const actionLines = doc.splitTextToSize(notice.corrective_actions, 182) as string[]
+  doc.text(actionLines, 14, y)
+  y += actionLines.length * 5 + 8
+
+  // Deadline
+  if (notice.remedy_deadline) {
+    doc.setFillColor(254, 242, 242)
+    doc.roundedRect(14, y, 182, 14, 3, 3, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(185, 28, 28)
+    doc.text(`REMEDY DEADLINE: ${new Date(notice.remedy_deadline + 'T00:00:00').toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}`, 105, y + 9, { align: 'center' })
+    doc.setTextColor(0, 0, 0)
+    y += 22
+  }
+
+  // Signature line
+  y += 4
+  doc.setDrawColor(180, 180, 180)
+  doc.line(14, y + 12, 80, y + 12)
+  doc.setFontSize(8)
+  doc.setTextColor(120, 120, 120)
+  doc.text('Authorised Signatory', 14, y + 17)
+  doc.text('Municipality of Excellence — Building Inspectorate', 196, y + 17, { align: 'right' })
+  doc.setTextColor(0, 0, 0)
+
+  // Page number
+  doc.setFontSize(7)
+  doc.setTextColor(150, 150, 150)
+  doc.text(`Generated ${new Date().toLocaleString('en-ZA')} · Ref: ${notice.reference_number}`, 105, 292, { align: 'center' })
+
+  doc.save(`notice-${notice.reference_number}.pdf`)
 }
