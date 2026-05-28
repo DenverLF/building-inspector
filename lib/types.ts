@@ -61,6 +61,28 @@ export interface KmLog {
   created_at: string
 }
 
+export type NoticeStatus = 'draft' | 'sent' | 'resolved'
+
+export interface Notice {
+  id: string
+  reference_number: string
+  inspection_id: string | null
+  property_owner_name: string | null
+  property_owner_email: string | null
+  site_address: string
+  inspector_name: string | null
+  inspection_date: string | null
+  stage: InspectionStage | null
+  non_compliance_details: string
+  corrective_actions: string
+  remedy_deadline: string | null
+  status: NoticeStatus
+  sent_at: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type ActivityAction = 'created' | 'updated' | 'status_changed' | 'outcome_changed' | 'deleted'
 
 export interface ActivityLog {
