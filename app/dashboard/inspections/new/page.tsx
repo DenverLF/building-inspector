@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { INSPECTORS } from '@/lib/inspectors'
+import { logActivity } from '@/lib/activity'
 import type { InspectionStage } from '@/lib/types'
 
 const STAGES: { value: InspectionStage; label: string; color: string }[] = [
@@ -115,6 +116,16 @@ export default function NewInspectionPage() {
         }
       }
     }
+
+    const stageLabel = STAGES.find(s => s.value === form.stage)?.label ?? form.stage
+    await logActivity({
+      entity_type: 'inspection',
+      entity_id: inspectionId,
+      entity_title: `${stageLabel}${form.address ? ` at ${form.address}` : ''}`,
+      action: 'created',
+      description: `Inspection created: ${stageLabel}${form.address ? ` at ${form.address}` : ''}`,
+      performed_by_name: form.inspector_name || null,
+    })
 
     router.push(`/dashboard/inspections/${inspectionId}`)
     router.refresh()

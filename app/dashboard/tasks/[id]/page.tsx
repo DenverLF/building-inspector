@@ -5,7 +5,8 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { INSPECTORS } from '@/lib/inspectors'
-import type { Task } from '@/lib/types'
+import { logActivity } from '@/lib/activity'
+import type { Task, ActivityLog } from '@/lib/types'
 
 const STAGES = [
   { value: 'fire_installation', label: 'Fire Installation' },
@@ -27,12 +28,21 @@ const STATUS_STYLE: Record<string, string> = {
   completed: 'bg-green-100 text-green-700 border-green-200',
 }
 
+const ACTION_ICON: Record<string, string> = {
+  created: '✦',
+  updated: '✎',
+  status_changed: '⇄',
+  outcome_changed: '⇄',
+  deleted: '✕',
+}
+
 export default function TaskDetailPage() {
   const router = useRouter()
   const params = useParams()
   const id = params.id as string
 
   const [task, setTask] = useState<Task | null>(null)
+  const [history, setHistory] = useState<ActivityLog[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -50,6 +60,17 @@ export default function TaskDetailPage() {
     description: '',
     status: 'pending',
   })
+
+  async function loadHistory() {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('activity_logs')
+      .select('*')
+      .eq('entity_id', id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+    setHistory((data as ActivityLog[]) ?? [])
+  }
 
   useEffect(() => {
     async function load() {
@@ -73,6 +94,8 @@ export default function TaskDetailPage() {
       setLoading(false)
     }
     load()
+    loadHistory()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   function set(field: string, value: string) {
@@ -101,23 +124,62 @@ export default function TaskDetailPage() {
     if (err) {
       setError(err.message)
     } else {
+      // Build change description
+      const changes: string[] = []
+      if (task) {
+        if (form.title !== task.title) changes.push('title')
+        if (form.address !== (task.address ?? '')) changes.push('address')
+        if (form.assigned_inspector !== (task.assigned_inspector ?? '')) changes.push(`inspector → ${form.assigned_inspector || 'unassigned'}`)
+        if (form.due_date !== (task.due_date ?? '')) changes.push('due date')
+        if (form.priority !== task.priority) changes.push(`priority → ${form.priority}`)
+        if (form.status !== task.status) changes.push(`status → ${form.status.replace('_', ' ')}`)
+      }
+      await logActivity({
+        entity_type: 'task',
+        entity_id: id,
+        entity_title: form.title,
+        action: 'updated',
+        description: changes.length > 0 ? `Updated: ${changes.join(', ')}` : 'Task details updated',
+        performed_by_name: form.assigned_inspector || null,
+      })
       setEditing(false)
-      const supabase2 = createClient()
-      const { data } = await supabase2.from('tasks').select('*').eq('id', id).single()
+      const { data } = await createClient().from('tasks').select('*').eq('id', id).single()
       if (data) setTask(data as Task)
+      await loadHistory()
     }
     setSaving(false)
   }
 
   async function handleStatusChange(status: string) {
+    const oldStatus = task?.status ?? 'pending'
+    if (status === oldStatus) return
     const supabase = createClient()
     await supabase.from('tasks').update({ status }).eq('id', id)
     setTask(t => t ? { ...t, status: status as Task['status'] } : t)
     setForm(f => ({ ...f, status }))
+
+    const labelMap: Record<string, string> = { pending: 'Pending', in_progress: 'In Progress', completed: 'Completed' }
+    await logActivity({
+      entity_type: 'task',
+      entity_id: id,
+      entity_title: task?.title ?? '',
+      action: 'status_changed',
+      description: `Status: ${labelMap[oldStatus]} → ${labelMap[status]}`,
+      performed_by_name: task?.assigned_inspector ?? null,
+    })
+    await loadHistory()
   }
 
   async function handleDelete() {
     setDeleting(true)
+    await logActivity({
+      entity_type: 'task',
+      entity_id: id,
+      entity_title: task?.title ?? '',
+      action: 'deleted',
+      description: `Task deleted`,
+      performed_by_name: task?.assigned_inspector ?? null,
+    })
     const supabase = createClient()
     await supabase.from('tasks').delete().eq('id', id)
     router.push('/dashboard/tasks')
@@ -224,132 +286,86 @@ export default function TaskDetailPage() {
 
         {editing ? (
           <>
-            {/* Edit: Task Details */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Task Details</p>
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Title <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    value={form.title}
-                    onChange={e => set('title', e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400"
-                  />
+                  <input type="text" value={form.title} onChange={e => set('title', e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Site Address</label>
-                  <input
-                    type="text"
-                    value={form.address}
-                    onChange={e => set('address', e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400"
-                  />
+                  <input type="text" value={form.address} onChange={e => set('address', e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                  <textarea
-                    value={form.description}
-                    onChange={e => set('description', e.target.value)}
-                    rows={3}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none"
-                  />
+                  <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={3}
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none" />
                 </div>
               </div>
             </div>
 
-            {/* Edit: Assignment */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Assignment</p>
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Assign To</label>
-                  <select
-                    value={form.assigned_inspector}
-                    onChange={e => set('assigned_inspector', e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white"
-                  >
+                  <select value={form.assigned_inspector} onChange={e => set('assigned_inspector', e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white">
                     <option value="">— Select inspector —</option>
-                    {INSPECTORS.map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
+                    {INSPECTORS.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Due Date <span className="text-red-500">*</span></label>
-                  <input
-                    type="date"
-                    value={form.due_date}
-                    onChange={e => set('due_date', e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400"
-                  />
+                  <input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400" />
                 </div>
               </div>
             </div>
 
-            {/* Edit: Status */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Status</p>
-              <select
-                value={form.status}
-                onChange={e => set('status', e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white"
-              >
-                {STATUS_OPTIONS.map(s => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
+              <select value={form.status} onChange={e => set('status', e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white">
+                {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
 
-            {/* Edit: Priority */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Priority</p>
               <div className="flex gap-2">
                 {(['low', 'medium', 'high'] as const).map(p => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => set('priority', p)}
+                  <button key={p} type="button" onClick={() => set('priority', p)}
                     className={`flex-1 py-2 rounded-xl text-sm font-semibold capitalize transition-colors border ${
                       form.priority === p
                         ? p === 'low' ? 'bg-gray-700 text-white border-gray-700'
                           : p === 'medium' ? 'bg-orange-500 text-white border-orange-500'
                           : 'bg-red-500 text-white border-red-500'
                         : 'bg-white text-gray-500 border-gray-200'
-                    }`}
-                  >
-                    {p}
-                  </button>
+                    }`}>{p}</button>
                 ))}
               </div>
             </div>
 
-            {/* Edit: Inspection Stage */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Inspection Stage</p>
-              <select
-                value={form.inspection_stage}
-                onChange={e => set('inspection_stage', e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white"
-              >
+              <select value={form.inspection_stage} onChange={e => set('inspection_stage', e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white">
                 <option value="">— Select stage —</option>
-                {STAGES.map(s => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
+                {STAGES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
 
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="w-full py-3.5 bg-[#1a1745] hover:bg-[#2d1f7a] disabled:opacity-60 text-white font-semibold rounded-2xl text-sm transition-colors shadow-lg"
-            >
+            <button onClick={handleSave} disabled={saving}
+              className="w-full py-3.5 bg-[#1a1745] hover:bg-[#2d1f7a] disabled:opacity-60 text-white font-semibold rounded-2xl text-sm transition-colors shadow-lg">
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
           </>
         ) : (
           <>
-            {/* View: Details */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Task Details</p>
               <div className="space-y-3">
@@ -374,7 +390,6 @@ export default function TaskDetailPage() {
               </div>
             </div>
 
-            {/* View: Assignment */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Assignment</p>
               <div className="space-y-2">
@@ -407,7 +422,29 @@ export default function TaskDetailPage() {
               </div>
             </div>
 
-            {/* View: Created */}
+            {/* History */}
+            {history.length > 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">History</p>
+                <div className="space-y-3">
+                  {history.map(entry => (
+                    <div key={entry.id} className="flex items-start gap-3">
+                      <span className="text-gray-400 text-sm w-4 flex-shrink-0 mt-0.5">{ACTION_ICON[entry.action]}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-700">{entry.description}</p>
+                        {entry.performed_by_name && (
+                          <p className="text-xs text-[#1a1745] font-medium">{entry.performed_by_name}</p>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-400 flex-shrink-0">
+                        {new Date(entry.created_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Created</p>
               <p className="text-sm text-gray-600">
@@ -420,24 +457,16 @@ export default function TaskDetailPage() {
         )}
       </div>
 
-      {/* Delete confirmation modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50 px-4 pb-8">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
             <h3 className="font-bold text-gray-900 text-lg mb-2">Delete Task?</h3>
             <p className="text-gray-500 text-sm mb-6">This action cannot be undone. The task will be permanently removed.</p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold text-sm disabled:opacity-60"
-              >
+              <button onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm">Cancel</button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold text-sm disabled:opacity-60">
                 {deleting ? 'Deleting…' : 'Delete'}
               </button>
             </div>
