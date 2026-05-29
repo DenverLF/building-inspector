@@ -4,9 +4,9 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { INSPECTORS } from '@/lib/inspectors'
-import type { Inspection, KmLog } from '@/lib/types'
+import type { Inspection, KmLog, Notice } from '@/lib/types'
 
-type ReportType = 'inspections' | 'km_log'
+type ReportType = 'inspections' | 'km_log' | 'notices'
 
 function monthOptions() {
   const opts = []
@@ -40,6 +40,15 @@ export default function ReportsPage() {
   const [selectedMonth, setSelectedMonth] = useState(months[0].value)
   const [kmInspectorFilter, setKmInspectorFilter] = useState('')
 
+  // Notices filters
+  const [noticesDateFrom, setNoticesDateFrom] = useState(() => {
+    const d = new Date()
+    d.setDate(1)
+    return d.toISOString().split('T')[0]
+  })
+  const [noticesDateTo, setNoticesDateTo] = useState(() => new Date().toISOString().split('T')[0])
+  const [noticesStatusFilter, setNoticesStatusFilter] = useState('')
+
   async function handleGenerate() {
     setGenerating(true)
     setError(null)
@@ -71,7 +80,7 @@ export default function ReportsPage() {
         const { generateInspectionsReport } = await import('@/lib/pdf')
         await generateInspectionsReport(inspections, dateFrom, dateTo, inspectorFilter)
 
-      } else {
+      } else if (reportType === 'km_log') {
         const [yyyy, mm] = selectedMonth.split('-').map(Number)
         const from = `${selectedMonth}-01`
         const to = new Date(yyyy, mm, 1).toISOString().split('T')[0]
@@ -98,6 +107,29 @@ export default function ReportsPage() {
 
         const { generateKmReport } = await import('@/lib/pdf')
         await generateKmReport(logs, monthLabel, kmInspectorFilter)
+
+      } else {
+        let query = supabase
+          .from('notices')
+          .select('*')
+          .gte('created_at', noticesDateFrom + 'T00:00:00')
+          .lte('created_at', noticesDateTo + 'T23:59:59')
+          .order('created_at', { ascending: true })
+
+        if (noticesStatusFilter) query = query.eq('status', noticesStatusFilter)
+
+        const { data, error: err } = await query
+        if (err) throw new Error(err.message)
+
+        const notices = (data as Notice[]) ?? []
+        if (notices.length === 0) {
+          setError('No notices found for the selected filters.')
+          setGenerating(false)
+          return
+        }
+
+        const { generateNoticesReport } = await import('@/lib/pdf')
+        await generateNoticesReport(notices, noticesDateFrom, noticesDateTo, noticesStatusFilter)
       }
 
       setSuccess(true)
@@ -138,10 +170,11 @@ export default function ReportsPage() {
         {/* Report type */}
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Report Type</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {([
               { value: 'inspections', label: 'Inspections', icon: '📋' },
-              { value: 'km_log', label: 'Kilometre Log', icon: '🚗' },
+              { value: 'km_log', label: 'KM Log', icon: '🚗' },
+              { value: 'notices', label: 'Notices', icon: '⚠️' },
             ] as const).map(r => (
               <button
                 key={r.value}
@@ -199,7 +232,7 @@ export default function ReportsPage() {
               </div>
             </div>
           </div>
-        ) : (
+        ) : reportType === 'km_log' ? (
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Filters</p>
             <div className="space-y-3">
@@ -226,12 +259,52 @@ export default function ReportsPage() {
               </div>
             </div>
           </div>
+        ) : (
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Filters</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date From</label>
+                <input
+                  type="date"
+                  value={noticesDateFrom}
+                  onChange={e => setNoticesDateFrom(e.target.value)}
+                  max={noticesDateTo}
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date To</label>
+                <input
+                  type="date"
+                  value={noticesDateTo}
+                  onChange={e => setNoticesDateTo(e.target.value)}
+                  min={noticesDateFrom}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status (optional)</label>
+                <select
+                  value={noticesStatusFilter}
+                  onChange={e => setNoticesStatusFilter(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+                >
+                  <option value="">— All statuses —</option>
+                  <option value="draft">Draft</option>
+                  <option value="sent">Sent</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* What's included note */}
         <div className="bg-purple-50 rounded-2xl p-4">
           <p className="text-xs font-semibold text-purple-700 mb-1">
-            {reportType === 'inspections' ? 'Inspections report includes:' : 'KM log report includes:'}
+            {reportType === 'inspections' ? 'Inspections report includes:' : reportType === 'km_log' ? 'KM log report includes:' : 'Notices report includes:'}
           </p>
           {reportType === 'inspections' ? (
             <ul className="text-xs text-purple-600 space-y-0.5">
@@ -239,11 +312,17 @@ export default function ReportsPage() {
               <li>• Notes for each inspection</li>
               <li>• Summary totals (Pass / Fail / Attention)</li>
             </ul>
-          ) : (
+          ) : reportType === 'km_log' ? (
             <ul className="text-xs text-purple-600 space-y-0.5">
               <li>• All trips: date, inspector, from → to, distance</li>
               <li>• Purpose of each trip</li>
               <li>• Total kilometres at the bottom</li>
+            </ul>
+          ) : (
+            <ul className="text-xs text-purple-600 space-y-0.5">
+              <li>• Reference, address, owner, inspector</li>
+              <li>• Stage, status, and remedy deadline</li>
+              <li>• Summary totals (Draft / Sent / Resolved)</li>
             </ul>
           )}
         </div>

@@ -1,5 +1,5 @@
 // PDF generation helpers — runs client-side only (browser)
-import type { Inspection, KmLog, Notice } from '@/lib/types'
+import type { Inspection, KmLog, Notice, NoticeStatus } from '@/lib/types'
 
 const STAGE_LABEL: Record<string, string> = {
   fire_installation: 'Fire Installation',
@@ -335,4 +335,77 @@ export async function generateNotice(notice: Notice) {
   doc.text(`Generated ${new Date().toLocaleString('en-ZA')} · Ref: ${notice.reference_number}`, 105, 292, { align: 'center' })
 
   doc.save(`notice-${notice.reference_number}.pdf`)
+}
+
+export async function generateNoticesReport(
+  notices: Notice[],
+  dateFrom: string,
+  dateTo: string,
+  statusFilter: string
+) {
+  const { jsPDF } = await import('jspdf')
+  const { default: autoTable } = await import('jspdf-autotable')
+
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+
+  const statusLabel = statusFilter ? ` · ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}` : ''
+  const subtitle = `${dateFrom} – ${dateTo}${statusLabel}`
+
+  header(doc, 'Notices Report', subtitle)
+
+  const draft = notices.filter(n => n.status === 'draft').length
+  const sent = notices.filter(n => n.status === 'sent').length
+  const resolved = notices.filter(n => n.status === 'resolved').length
+
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(80, 80, 80)
+  doc.text(`Total: ${notices.length}   Draft: ${draft}   Sent: ${sent}   Resolved: ${resolved}`, 14, 36)
+  doc.setTextColor(0, 0, 0)
+
+  const STATUS_COLOR: Record<NoticeStatus, [number, number, number]> = {
+    draft: [107, 114, 128],
+    sent: [59, 130, 246],
+    resolved: [34, 197, 94],
+  }
+
+  autoTable(doc, {
+    startY: 41,
+    head: [['Reference', 'Address', 'Owner', 'Inspector', 'Stage', 'Status', 'Deadline']],
+    body: notices.map(n => [
+      n.reference_number,
+      n.site_address,
+      n.property_owner_name ?? '—',
+      n.inspector_name ?? '—',
+      STAGE_LABEL[n.stage ?? ''] ?? '—',
+      n.status.charAt(0).toUpperCase() + n.status.slice(1),
+      n.remedy_deadline
+        ? new Date(n.remedy_deadline + 'T00:00:00').toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
+        : '—',
+    ]),
+    headStyles: { fillColor: [26, 23, 69], textColor: 255, fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7.5, textColor: [30, 30, 30] },
+    alternateRowStyles: { fillColor: [248, 247, 255] },
+    columnStyles: {
+      0: { cellWidth: 28 },
+      1: { cellWidth: 40 },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 28 },
+      4: { cellWidth: 26 },
+      5: { cellWidth: 18 },
+      6: { cellWidth: 22 },
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    didDrawCell: (data: any) => {
+      if (data.section === 'body' && data.column.index === 5) {
+        const status = String((data.row.raw as string[])[5]).toLowerCase() as NoticeStatus
+        const rgb = STATUS_COLOR[status]
+        if (rgb) data.cell.styles.textColor = rgb
+      }
+    },
+    margin: { left: 14, right: 14 },
+  })
+
+  footer(doc)
+  doc.save(`notices-report-${dateFrom}-${dateTo}.pdf`)
 }

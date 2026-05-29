@@ -43,6 +43,9 @@ export default function InspectionsPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('All')
   const [search, setSearch] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [showDateFilter, setShowDateFilter] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -73,8 +76,14 @@ export default function InspectionsPage() {
       (tab === 'Fail' && i.outcome === 'fail') ||
       (tab === 'Attention' && i.outcome === 'attention_required')
 
-    return matchesSearch && matchesTab
+    const inspDate = i.inspected_at.split('T')[0]
+    const matchesFrom = !dateFrom || inspDate >= dateFrom
+    const matchesTo = !dateTo || inspDate <= dateTo
+
+    return matchesSearch && matchesTab && matchesFrom && matchesTo
   })
+
+  const dateFilterActive = !!dateFrom || !!dateTo
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -91,19 +100,61 @@ export default function InspectionsPage() {
       </div>
 
       <div className="px-4 pt-4">
-        {/* Search */}
-        <div className="relative mb-3">
-          <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search inspections..."
-            className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm"
-          />
+        {/* Search + date filter toggle */}
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1">
+            <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search inspections..."
+              className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm"
+            />
+          </div>
+          <button
+            onClick={() => {
+              setShowDateFilter(v => !v)
+              if (showDateFilter) { setDateFrom(''); setDateTo('') }
+            }}
+            className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center shadow-sm border transition-colors ${
+              dateFilterActive ? 'bg-[#1a1745] border-[#1a1745] text-white' : 'bg-white border-gray-200 text-gray-500'
+            }`}
+            title="Filter by date"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </button>
         </div>
+
+        {/* Date range inputs */}
+        {showDateFilter && (
+          <div className="bg-white rounded-2xl px-4 py-3 shadow-sm mb-3 flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs text-gray-500 mb-1">From</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                max={dateTo || undefined}
+                className="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs text-gray-500 mb-1">To</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                min={dateFrom || undefined}
+                className="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
