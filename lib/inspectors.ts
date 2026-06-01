@@ -20,3 +20,11 @@ export function getInitials(name: string | null | undefined): string {
   if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
   return parts[0].substring(0, 2).toUpperCase()
 }
+
+export function slugify(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '-')
+}
+
+export function getInspectorBySlug(slug: string): string | null {
+  return INSPECTORS.find(n => slugify(n) === slug) ?? null
+}
