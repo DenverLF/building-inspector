@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { INSPECTORS } from '@/lib/inspectors'
 import { logActivity } from '@/lib/activity'
-import type { Notice, InspectionStage } from '@/lib/types'
+import type { Notice, NoticeAttachment, InspectionStage } from '@/lib/types'
+import SignaturePad from './SignaturePad'
 
 const STAGES: { value: InspectionStage; label: string }[] = [
   { value: 'fire_installation', label: 'Fire Installation' },
@@ -15,9 +16,7 @@ const STAGES: { value: InspectionStage; label: string }[] = [
   { value: 'permission_to_use', label: 'Permission to Use' },
   { value: 'occupation', label: 'Occupation' },
 ]
-
 const STAGE_LABEL: Record<string, string> = Object.fromEntries(STAGES.map(s => [s.value, s.label]))
-
 const STATUS_STYLE: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
   sent: 'bg-blue-100 text-blue-700',
@@ -30,13 +29,20 @@ export default function NoticeDetailPage() {
   const id = params.id as string
 
   const [notice, setNotice] = useState<Notice | null>(null)
+  const [attachments, setAttachments] = useState<NoticeAttachment[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(false)
+  const [lightbox, setLightbox] = useState<string | null>(null)
+
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const galleryRef = useRef<HTMLInputElement>(null)
+  const docRef = useRef<HTMLInputElement>(null)
 
   const [form, setForm] = useState({
     site_address: '',
@@ -50,19 +56,35 @@ export default function NoticeDetailPage() {
     remedy_deadline: '',
   })
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+
+  function fileUrl(path: string) {
+    return `${supabaseUrl}/storage/v1/object/public/notice-files/${path}`
+  }
+
   async function reload() {
     const supabase = createClient()
     const { data } = await supabase.from('notices').select('*').eq('id', id).single()
     if (data) setNotice(data as Notice)
   }
 
+  async function reloadAttachments() {
+    const supabase = createClient()
+    const { data } = await supabase.from('notice_attachments').select('*').eq('notice_id', id).order('created_at')
+    setAttachments((data as NoticeAttachment[]) ?? [])
+  }
+
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const { data, error: err } = await supabase.from('notices').select('*').eq('id', id).single()
-      if (err || !data) { setError('Notice not found.'); setLoading(false); return }
-      const n = data as Notice
+      const [noticeRes, attachRes] = await Promise.all([
+        supabase.from('notices').select('*').eq('id', id).single(),
+        supabase.from('notice_attachments').select('*').eq('notice_id', id).order('created_at'),
+      ])
+      if (noticeRes.error || !noticeRes.data) { setError('Notice not found.'); setLoading(false); return }
+      const n = noticeRes.data as Notice
       setNotice(n)
+      setAttachments((attachRes.data as NoticeAttachment[]) ?? [])
       setForm({
         site_address: n.site_address,
         property_owner_name: n.property_owner_name ?? '',
@@ -105,11 +127,9 @@ export default function NoticeDetailPage() {
     if (err) { setError(err.message) }
     else {
       await logActivity({
-        entity_type: 'task',
-        entity_id: id,
+        entity_type: 'task', entity_id: id,
         entity_title: `Notice ${notice?.reference_number}`,
-        action: 'updated',
-        description: 'Notice details updated',
+        action: 'updated', description: 'Notice details updated',
         performed_by_name: form.inspector_name || null,
       })
       setEditing(false)
@@ -121,36 +141,51 @@ export default function NoticeDetailPage() {
   async function markSent() {
     const supabase = createClient()
     await supabase.from('notices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', id)
-    await logActivity({
-      entity_type: 'task',
-      entity_id: id,
-      entity_title: `Notice ${notice?.reference_number}`,
-      action: 'status_changed',
-      description: 'Notice marked as sent',
-      performed_by_name: notice?.inspector_name ?? null,
-    })
+    await logActivity({ entity_type: 'task', entity_id: id, entity_title: `Notice ${notice?.reference_number}`, action: 'status_changed', description: 'Notice marked as sent', performed_by_name: notice?.inspector_name ?? null })
     await reload()
   }
 
   async function markResolved() {
     const supabase = createClient()
     await supabase.from('notices').update({ status: 'resolved' }).eq('id', id)
-    await logActivity({
-      entity_type: 'task',
-      entity_id: id,
-      entity_title: `Notice ${notice?.reference_number}`,
-      action: 'status_changed',
-      description: 'Notice marked as resolved',
-      performed_by_name: notice?.inspector_name ?? null,
-    })
+    await logActivity({ entity_type: 'task', entity_id: id, entity_title: `Notice ${notice?.reference_number}`, action: 'status_changed', description: 'Notice marked as resolved', performed_by_name: notice?.inspector_name ?? null })
     await reload()
+  }
+
+  async function handleUpload(fileType: 'photo' | 'document', file: File) {
+    setUploading(true)
+    const supabase = createClient()
+    const ext = file.name.split('.').pop() ?? 'bin'
+    const path = `notices/${id}/${fileType}s/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+    const { error: upErr } = await supabase.storage.from('notice-files').upload(path, file, { upsert: false })
+    if (!upErr) {
+      await supabase.from('notice_attachments').insert({
+        notice_id: id,
+        file_name: file.name,
+        storage_path: path,
+        file_type: fileType,
+      })
+      await reloadAttachments()
+    }
+    setUploading(false)
+    // Reset input
+    if (cameraRef.current) cameraRef.current.value = ''
+    if (galleryRef.current) galleryRef.current.value = ''
+    if (docRef.current) docRef.current.value = ''
+  }
+
+  async function deleteAttachment(attId: string, path: string) {
+    const supabase = createClient()
+    await supabase.storage.from('notice-files').remove([path])
+    await supabase.from('notice_attachments').delete().eq('id', attId)
+    await reloadAttachments()
   }
 
   async function handleDownloadPdf() {
     if (!notice) return
     setPdfLoading(true)
     const { generateNotice } = await import('@/lib/pdf')
-    await generateNotice(notice)
+    await generateNotice(notice, attachments)
     setPdfLoading(false)
   }
 
@@ -174,10 +209,9 @@ REQUIRED CORRECTIVE ACTIONS:
 ${notice.corrective_actions}
 ${notice.remedy_deadline ? `\nREMEDY DEADLINE: ${new Date(notice.remedy_deadline + 'T00:00:00').toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}
 
-Please ensure that all corrective actions are completed by the specified deadline. Failure to comply may result in further enforcement action.
+Please ensure that all corrective actions are completed by the specified deadline.
 
-Municipality of Excellence
-Building Inspectorate`
+Municipality of Excellence — Building Inspectorate`
     )
     const to = notice.property_owner_email ? encodeURIComponent(notice.property_owner_email) : ''
     window.location.href = `mailto:${to}?subject=${subject}&body=${body}`
@@ -185,18 +219,14 @@ Building Inspectorate`
 
   async function handleDelete() {
     setDeleting(true)
-    await logActivity({
-      entity_type: 'task',
-      entity_id: id,
-      entity_title: `Notice ${notice?.reference_number}`,
-      action: 'deleted',
-      description: 'Notice deleted',
-      performed_by_name: notice?.inspector_name ?? null,
-    })
+    await logActivity({ entity_type: 'task', entity_id: id, entity_title: `Notice ${notice?.reference_number}`, action: 'deleted', description: 'Notice deleted', performed_by_name: notice?.inspector_name ?? null })
     await createClient().from('notices').delete().eq('id', id)
     router.push('/dashboard/notices')
     router.refresh()
   }
+
+  const photos = attachments.filter(a => a.file_type === 'photo')
+  const documents = attachments.filter(a => a.file_type === 'document')
 
   if (loading) {
     return (
@@ -290,31 +320,26 @@ Building Inspectorate`
                 </button>
               </div>
               {notice?.status === 'draft' && (
-                <button onClick={markSent}
-                  className="w-full mt-2 py-2.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold">
+                <button onClick={markSent} className="w-full mt-2 py-2.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-xs font-semibold">
                   Mark as Sent
                 </button>
               )}
               {notice?.status === 'sent' && (
-                <button onClick={markResolved}
-                  className="w-full mt-2 py-2.5 rounded-xl border border-green-200 bg-green-50 text-green-700 text-xs font-semibold">
+                <button onClick={markResolved} className="w-full mt-2 py-2.5 rounded-xl border border-green-200 bg-green-50 text-green-700 text-xs font-semibold">
                   Mark as Resolved
                 </button>
               )}
             </div>
 
-            {/* Notice content */}
+            {/* Property */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Property</p>
               <div className="flex items-start justify-between gap-2 mb-1">
                 <p className="text-sm font-bold text-gray-900">{notice?.site_address}</p>
                 {notice?.site_address && (
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(notice.site_address)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-shrink-0 text-xs font-semibold text-[#1a1745] bg-purple-50 px-3 py-1.5 rounded-lg flex items-center gap-1"
-                  >
+                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(notice.site_address)}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex-shrink-0 text-xs font-semibold text-[#1a1745] bg-purple-50 px-3 py-1.5 rounded-lg flex items-center gap-1">
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -327,6 +352,7 @@ Building Inspectorate`
               {notice?.property_owner_email && <p className="text-xs text-blue-600">{notice.property_owner_email}</p>}
             </div>
 
+            {/* Inspection */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Inspection</p>
               <div className="space-y-2">
@@ -362,6 +388,110 @@ Building Inspectorate`
                 </p>
               </div>
             )}
+
+            {/* Signatures */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Signatures</p>
+              <SignaturePad
+                noticeId={id}
+                signatureType="owner_signature_path"
+                label="Property Owner / Representative"
+                existingPath={notice?.owner_signature_path ?? null}
+                onSaved={() => reload()}
+              />
+              <div className="border-t border-gray-100 pt-4">
+                <SignaturePad
+                  noticeId={id}
+                  signatureType="inspector_signature_path"
+                  label="Building Inspector"
+                  existingPath={notice?.inspector_signature_path ?? null}
+                  onSaved={() => reload()}
+                />
+              </div>
+            </div>
+
+            {/* Attachments */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                Photos &amp; Documents {attachments.length > 0 && <span className="text-purple-600">({attachments.length})</span>}
+              </p>
+
+              {/* Photo grid */}
+              {photos.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {photos.map(photo => (
+                    <div key={photo.id} className="relative aspect-square group">
+                      <img
+                        src={fileUrl(photo.storage_path)}
+                        alt={photo.file_name}
+                        className="w-full h-full object-cover rounded-xl cursor-pointer"
+                        onClick={() => setLightbox(fileUrl(photo.storage_path))}
+                      />
+                      <button
+                        onClick={() => deleteAttachment(photo.id, photo.storage_path)}
+                        className="absolute top-1 right-1 w-6 h-6 bg-red-500 rounded-full text-white text-xs flex items-center justify-center shadow"
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Document list */}
+              {documents.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {documents.map(doc => (
+                    <div key={doc.id} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <a href={fileUrl(doc.storage_path)} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-blue-600 font-medium truncate">{doc.file_name}</a>
+                      </div>
+                      <button onClick={() => deleteAttachment(doc.id, doc.storage_path)}
+                        className="text-red-400 text-xs ml-2 flex-shrink-0">Delete</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Upload buttons */}
+              <div className="grid grid-cols-3 gap-2">
+                <label className={`flex flex-col items-center gap-1 py-3 rounded-xl bg-gray-50 border border-dashed border-gray-200 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="text-xs text-gray-500 font-medium">Camera</span>
+                  <input ref={cameraRef} type="file" accept="image/*"
+                    {...({ capture: 'environment' } as object)}
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload('photo', f) }} />
+                </label>
+
+                <label className={`flex flex-col items-center gap-1 py-3 rounded-xl bg-gray-50 border border-dashed border-gray-200 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-xs text-gray-500 font-medium">Gallery</span>
+                  <input ref={galleryRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload('photo', f) }} />
+                </label>
+
+                <label className={`flex flex-col items-center gap-1 py-3 rounded-xl bg-gray-50 border border-dashed border-gray-200 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span className="text-xs text-gray-500 font-medium">Document</span>
+                  <input ref={docRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload('document', f) }} />
+                </label>
+              </div>
+
+              {uploading && (
+                <p className="text-xs text-purple-600 font-medium text-center mt-2 animate-pulse">Uploading…</p>
+              )}
+            </div>
           </>
         )}
 
@@ -443,6 +573,13 @@ Building Inspectorate`
           </>
         )}
       </div>
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="Attachment" className="max-w-full max-h-full rounded-xl object-contain" />
+        </div>
+      )}
 
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50 px-4 pb-8">
