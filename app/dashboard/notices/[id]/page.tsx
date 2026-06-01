@@ -306,7 +306,23 @@ Building Inspectorate`
             {/* Notice content */}
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Property</p>
-              <p className="text-sm font-bold text-gray-900 mb-1">{notice?.site_address}</p>
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <p className="text-sm font-bold text-gray-900">{notice?.site_address}</p>
+                {notice?.site_address && (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(notice.site_address)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-shrink-0 text-xs font-semibold text-[#1a1745] bg-purple-50 px-3 py-1.5 rounded-lg flex items-center gap-1"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Map
+                  </a>
+                )}
+              </div>
               {notice?.property_owner_name && <p className="text-sm text-gray-700">{notice.property_owner_name}</p>}
               {notice?.property_owner_email && <p className="text-xs text-blue-600">{notice.property_owner_email}</p>}
             </div>
