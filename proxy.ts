@@ -30,12 +30,14 @@ export async function proxy(request: NextRequest) {
       }
     )
 
-    const { data: { user } } = await supabase.auth.getUser()
+    // getSession reads from the cookie — no network round-trip, so navigation is instant.
+    // Individual server components call getUser() where they need validated user data.
+    const { data: { session } } = await supabase.auth.getSession()
 
-    if (!user && isDashboard) {
+    if (!session && isDashboard) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
-    if (user && isLoginPage) {
+    if (session && isLoginPage) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
 
