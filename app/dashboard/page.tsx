@@ -218,11 +218,11 @@ export default async function DashboardPage() {
               </svg>
               <span className="text-xs font-semibold">New Notice</span>
             </Link>
-            <Link href="/dashboard/reports" className="flex items-center gap-2 p-3 bg-gray-50 text-gray-700 rounded-xl border border-gray-100">
+            <Link href="/dashboard/route" className="flex items-center gap-2 p-3 bg-green-600 text-white rounded-xl">
               <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
               </svg>
-              <span className="text-xs font-semibold">Reports</span>
+              <span className="text-xs font-semibold">Today's Route</span>
             </Link>
           </div>
         </div>

@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 export interface GeoPosition {
   lat: number
   lng: number
-  accuracy: number
+  accuracy?: number
 }
 
 export function useGeolocation() {
