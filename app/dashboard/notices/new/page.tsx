@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -28,7 +28,7 @@ export default function NewNoticePage() {
   const [error, setError] = useState<string | null>(null)
 
   const [form, setForm] = useState({
-    reference_number: generateRef(),
+    reference_number: '',
     site_address: '',
     property_owner_name: '',
     property_owner_email: '',
@@ -39,6 +39,10 @@ export default function NewNoticePage() {
     corrective_actions: '',
     remedy_deadline: '',
   })
+
+  useEffect(() => {
+    setForm(f => ({ ...f, reference_number: generateRef() }))
+  }, [])
 
   function set(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }))
