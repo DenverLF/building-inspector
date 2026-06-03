@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import type { Task } from '@/lib/types'
+import { useGeolocation } from '@/hooks/useGeolocation'
+import { distanceKm, formatDist } from '@/lib/geo'
 
-const TABS = ['All', 'My Tasks', 'Due Today', 'Overdue'] as const
+const TABS = ['All', 'My Tasks', 'Due Today', 'Overdue', 'Near Me'] as const
 type Tab = typeof TABS[number]
 
 const STATUS_STYLE: Record<string, string> = {
@@ -13,19 +15,16 @@ const STATUS_STYLE: Record<string, string> = {
   in_progress: 'bg-blue-100 text-blue-700',
   completed: 'bg-green-100 text-green-700',
 }
-
 const STATUS_LABEL: Record<string, string> = {
   pending: 'Pending',
   in_progress: 'In Progress',
   completed: 'Completed',
 }
-
 const PRIORITY_STYLE: Record<string, string> = {
   low: 'bg-gray-100 text-gray-600',
   medium: 'bg-orange-100 text-orange-700',
   high: 'bg-red-100 text-red-600',
 }
-
 const STAGE_LABEL: Record<string, string> = {
   fire_installation: 'Fire Installation',
   trench: 'Trench',
@@ -38,7 +37,6 @@ function isOverdue(task: Task) {
   if (!task.due_date || task.status === 'completed') return false
   return new Date(task.due_date) < new Date(new Date().toDateString())
 }
-
 function isDueToday(task: Task) {
   if (!task.due_date || task.status === 'completed') return false
   return task.due_date === new Date().toISOString().split('T')[0]
@@ -49,15 +47,14 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('All')
   const [search, setSearch] = useState('')
-  const [userId, setUserId] = useState<string | null>(null)
   const [userFullName, setUserFullName] = useState<string | null>(null)
+  const { position } = useGeolocation()
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        setUserId(user.id)
         const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single()
         setUserFullName(profile?.full_name ?? null)
       }
@@ -68,20 +65,37 @@ export default function TasksPage() {
     load()
   }, [])
 
-  const filtered = tasks.filter(t => {
-    const matchesSearch = !search ||
-      t.title.toLowerCase().includes(search.toLowerCase()) ||
-      (t.address ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      (t.assigned_inspector ?? '').toLowerCase().includes(search.toLowerCase())
+  // Calculate distances for tasks that have coordinates
+  function taskDistance(task: Task): number | null {
+    if (!position || task.lat == null || task.lng == null) return null
+    return distanceKm(position.lat, position.lng, task.lat, task.lng)
+  }
 
-    const matchesTab =
-      tab === 'All' ||
-      (tab === 'My Tasks' && (t.assigned_inspector === userFullName)) ||
-      (tab === 'Due Today' && isDueToday(t)) ||
-      (tab === 'Overdue' && isOverdue(t))
+  const filtered = tasks
+    .filter(t => {
+      const matchesSearch = !search ||
+        t.title.toLowerCase().includes(search.toLowerCase()) ||
+        (t.address ?? '').toLowerCase().includes(search.toLowerCase()) ||
+        (t.assigned_inspector ?? '').toLowerCase().includes(search.toLowerCase())
 
-    return matchesSearch && matchesTab
-  })
+      const matchesTab =
+        tab === 'All' ||
+        (tab === 'My Tasks' && t.assigned_inspector === userFullName) ||
+        (tab === 'Due Today' && isDueToday(t)) ||
+        (tab === 'Overdue' && isOverdue(t)) ||
+        (tab === 'Near Me' && t.lat != null && t.lng != null)
+
+      return matchesSearch && matchesTab && t.status !== 'completed'
+    })
+    .sort((a, b) => {
+      // Sort by distance when on Near Me tab and we have position
+      if (tab === 'Near Me' && position) {
+        const da = taskDistance(a) ?? Infinity
+        const db = taskDistance(b) ?? Infinity
+        return da - db
+      }
+      return 0
+    })
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -119,10 +133,16 @@ export default function TasksPage() {
                 tab === t ? 'bg-[#1a1745] text-white' : 'bg-white text-gray-500 border border-gray-200'
               }`}
             >
-              {t}
+              {t === 'Near Me' ? '📍 Near Me' : t}
             </button>
           ))}
         </div>
+
+        {tab === 'Near Me' && !position && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-xs text-yellow-700 mb-3">
+            Allow location access to see tasks sorted by distance.
+          </div>
+        )}
 
         {/* List */}
         {loading ? (
@@ -139,14 +159,22 @@ export default function TasksPage() {
           <div className="space-y-3">
             {filtered.map(task => {
               const overdue = isOverdue(task)
+              const dist = taskDistance(task)
               return (
                 <Link key={task.id} href={`/dashboard/tasks/${task.id}`}>
                   <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <p className="text-gray-900 font-bold text-sm leading-tight flex-1">{task.title}</p>
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${overdue ? 'bg-red-100 text-red-600' : STATUS_STYLE[task.status]}`}>
-                        {overdue ? 'Overdue' : STATUS_LABEL[task.status]}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {dist != null && (
+                          <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                            {formatDist(dist)}
+                          </span>
+                        )}
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${overdue ? 'bg-red-100 text-red-600' : STATUS_STYLE[task.status]}`}>
+                          {overdue ? 'Overdue' : STATUS_LABEL[task.status]}
+                        </span>
+                      </div>
                     </div>
                     {task.address && (
                       <p className="text-gray-500 text-xs mb-1.5 flex items-center gap-1">

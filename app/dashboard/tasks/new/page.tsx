@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { INSPECTORS } from '@/lib/inspectors'
 import { logActivity } from '@/lib/activity'
 import MicButton from '@/components/MicButton'
+import { geocodeAddress } from '@/lib/geo'
 
 const STAGES = [
   { value: 'fire_installation', label: 'Fire Installation' },
@@ -71,6 +72,16 @@ export default function NewTaskPage() {
         description: `Task created${form.assigned_inspector ? ` and assigned to ${form.assigned_inspector}` : ''}`,
         performed_by_name: form.assigned_inspector || null,
       })
+      // Geocode address in background — don't block navigation
+      if (form.address) {
+        geocodeAddress(form.address).then(coords => {
+          if (coords) {
+            createClient().from('tasks').update({
+              lat: coords.lat, lng: coords.lng, geocoded_at: new Date().toISOString(),
+            }).eq('id', inserted.id)
+          }
+        })
+      }
       router.push('/dashboard/tasks')
       router.refresh()
     }
