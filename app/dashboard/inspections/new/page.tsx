@@ -8,6 +8,7 @@ import { INSPECTORS } from '@/lib/inspectors'
 import { logActivity } from '@/lib/activity'
 import type { InspectionStage } from '@/lib/types'
 import MicButton from '@/components/MicButton'
+import CameraCapture from '@/components/CameraCapture'
 
 const STAGES: { value: InspectionStage; label: string; color: string }[] = [
   { value: 'fire_installation', label: 'Fire Installation', color: 'bg-red-50 border-red-200 text-red-700' },
@@ -31,6 +32,7 @@ export default function NewInspectionPage() {
   const [error, setError] = useState<string | null>(null)
   const [photos, setPhotos] = useState<File[]>([])
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
+  const [showCamera, setShowCamera] = useState(false)
 
   const [form, setForm] = useState({
     stage: '' as InspectionStage | '',
@@ -43,6 +45,13 @@ export default function NewInspectionPage() {
 
   function set(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }))
+  }
+
+  function addPhotoFile(file: File) {
+    setPhotos(prev => [...prev, file])
+    const reader = new FileReader()
+    reader.onload = e => setPhotoPreviews(prev => [...prev, e.target?.result as string])
+    reader.readAsDataURL(file)
   }
 
   function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -259,13 +268,14 @@ export default function NewInspectionPage() {
 
         {/* Photos */}
         <div className="bg-white rounded-2xl p-4 shadow-sm">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Photos</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            Photos {photos.length > 0 && <span className="text-purple-600">({photos.length})</span>}
+          </p>
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
             multiple
-            capture="environment"
             onChange={handlePhotoSelect}
             className="hidden"
           />
@@ -288,18 +298,39 @@ export default function NewInspectionPage() {
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full py-3 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 text-sm font-medium flex items-center justify-center gap-2 hover:border-purple-300 hover:text-purple-400 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            {photoPreviews.length === 0 ? 'Add Photos' : 'Add More Photos'}
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            {/* In-app camera */}
+            <button
+              type="button"
+              onClick={() => setShowCamera(true)}
+              className="py-3 rounded-xl border-2 border-dashed border-purple-200 text-purple-500 text-sm font-semibold flex items-center justify-center gap-2 hover:bg-purple-50 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Take Photo
+            </button>
+            {/* Gallery pick */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="py-3 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 text-sm font-semibold flex items-center justify-center gap-2 hover:border-gray-300 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Gallery
+            </button>
+          </div>
         </div>
+
+        {showCamera && (
+          <CameraCapture
+            onCapture={file => { addPhotoFile(file); setShowCamera(false) }}
+            onClose={() => setShowCamera(false)}
+          />
+        )}
 
         <button
           type="submit"

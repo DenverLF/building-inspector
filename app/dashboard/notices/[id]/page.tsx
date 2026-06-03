@@ -9,6 +9,7 @@ import { logActivity } from '@/lib/activity'
 import type { Notice, NoticeAttachment, InspectionStage } from '@/lib/types'
 import SignaturePad from './SignaturePad'
 import MicButton from '@/components/MicButton'
+import CameraCapture from '@/components/CameraCapture'
 
 const STAGES: { value: InspectionStage; label: string }[] = [
   { value: 'fire_installation', label: 'Fire Installation' },
@@ -40,6 +41,7 @@ export default function NoticeDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [lightbox, setLightbox] = useState<string | null>(null)
+  const [showCamera, setShowCamera] = useState(false)
 
   const cameraRef = useRef<HTMLInputElement>(null)
   const galleryRef = useRef<HTMLInputElement>(null)
@@ -458,17 +460,18 @@ Municipality of Excellence — Building Inspectorate`
 
               {/* Upload buttons */}
               <div className="grid grid-cols-3 gap-2">
-                <label className={`flex flex-col items-center gap-1 py-3 rounded-xl bg-gray-50 border border-dashed border-gray-200 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={() => setShowCamera(true)}
+                  className={`flex flex-col items-center gap-1 py-3 rounded-xl bg-purple-50 border border-dashed border-purple-200 ${uploading ? 'opacity-50' : ''}`}
+                >
+                  <svg className="w-5 h-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  <span className="text-xs text-gray-500 font-medium">Camera</span>
-                  <input ref={cameraRef} type="file" accept="image/*"
-                    {...({ capture: 'environment' } as object)}
-                    className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload('photo', f) }} />
-                </label>
+                  <span className="text-xs text-purple-600 font-semibold">Camera</span>
+                </button>
 
                 <label className={`flex flex-col items-center gap-1 py-3 rounded-xl bg-gray-50 border border-dashed border-gray-200 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
                   <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -580,6 +583,14 @@ Municipality of Excellence — Building Inspectorate`
           </>
         )}
       </div>
+
+      {/* In-app camera */}
+      {showCamera && (
+        <CameraCapture
+          onCapture={file => { handleUpload('photo', file); setShowCamera(false) }}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
 
       {/* Lightbox */}
       {lightbox && (
