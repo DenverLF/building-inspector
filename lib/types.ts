@@ -16,6 +16,9 @@ export interface Task {
   title: string
   description: string | null
   address: string | null
+  lat: number | null
+  lng: number | null
+  geocoded_at: string | null
   assigned_inspector: string | null
   created_by: string | null
   due_date: string | null

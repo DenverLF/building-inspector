@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { INSPECTORS } from '@/lib/inspectors'
 import { logActivity } from '@/lib/activity'
 import type { Task, ActivityLog } from '@/lib/types'
+import { geocodeAddress } from '@/lib/geo'
+import NavigateButton from '@/components/NavigateButton'
 
 const STAGES = [
   { value: 'fire_installation', label: 'Fire Installation' },
@@ -142,6 +144,16 @@ export default function TaskDetailPage() {
         description: changes.length > 0 ? `Updated: ${changes.join(', ')}` : 'Task details updated',
         performed_by_name: form.assigned_inspector || null,
       })
+      // Re-geocode if address changed
+      if (form.address && form.address !== (task?.address ?? '')) {
+        geocodeAddress(form.address).then(coords => {
+          if (coords) {
+            createClient().from('tasks').update({
+              lat: coords.lat, lng: coords.lng, geocoded_at: new Date().toISOString(),
+            }).eq('id', id)
+          }
+        })
+      }
       setEditing(false)
       const { data } = await createClient().from('tasks').select('*').eq('id', id).single()
       if (data) setTask(data as Task)
@@ -378,18 +390,7 @@ export default function TaskDetailPage() {
                       </svg>
                       <span className="text-sm text-gray-700">{task.address}</span>
                     </div>
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(task.address)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-shrink-0 text-xs font-semibold text-[#1a1745] bg-purple-50 px-3 py-1.5 rounded-lg flex items-center gap-1"
-                    >
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      Map
-                    </a>
+                    <NavigateButton lat={task.lat} lng={task.lng} address={task.address} compact />
                   </div>
                 )}
                 {task?.description && (
