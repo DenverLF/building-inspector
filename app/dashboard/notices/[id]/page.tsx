@@ -8,6 +8,7 @@ import { INSPECTORS } from '@/lib/inspectors'
 import { logActivity } from '@/lib/activity'
 import type { Notice, NoticeAttachment, InspectionStage } from '@/lib/types'
 import SignaturePad from './SignaturePad'
+import MicButton from '@/components/MicButton'
 
 const STAGES: { value: InspectionStage; label: string }[] = [
   { value: 'fire_installation', label: 'Fire Installation' },
@@ -549,12 +550,18 @@ Municipality of Excellence — Building Inspectorate`
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Content</p>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Non-Compliance Details</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">Non-Compliance Details</label>
+                    <MicButton onText={t => set('non_compliance_details', (form.non_compliance_details ? form.non_compliance_details + ' ' : '') + t)} />
+                  </div>
                   <textarea value={form.non_compliance_details} onChange={e => set('non_compliance_details', e.target.value)} rows={4}
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Corrective Actions</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">Corrective Actions</label>
+                    <MicButton onText={t => set('corrective_actions', (form.corrective_actions ? form.corrective_actions + ' ' : '') + t)} />
+                  </div>
                   <textarea value={form.corrective_actions} onChange={e => set('corrective_actions', e.target.value)} rows={4}
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none" />
                 </div>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import MicButton from '@/components/MicButton'
 import { createClient } from '@/lib/supabase/client'
 import { INSPECTORS } from '@/lib/inspectors'
 import { logActivity } from '@/lib/activity'
@@ -183,14 +184,20 @@ export default function NewNoticePage() {
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Non-Compliance</p>
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Details <span className="text-red-500">*</span></label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm font-medium text-gray-700">Details <span className="text-red-500">*</span></label>
+                <MicButton onText={t => set('non_compliance_details', (form.non_compliance_details ? form.non_compliance_details + ' ' : '') + t)} />
+              </div>
               <textarea value={form.non_compliance_details} onChange={e => set('non_compliance_details', e.target.value)}
                 placeholder="Describe the non-compliance found during inspection..."
                 rows={4}
                 className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-400 resize-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Required Corrective Actions <span className="text-red-500">*</span></label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm font-medium text-gray-700">Required Corrective Actions <span className="text-red-500">*</span></label>
+                <MicButton onText={t => set('corrective_actions', (form.corrective_actions ? form.corrective_actions + ' ' : '') + t)} />
+              </div>
               <textarea value={form.corrective_actions} onChange={e => set('corrective_actions', e.target.value)}
                 placeholder="List the actions the owner must take to remedy the non-compliance..."
                 rows={4}

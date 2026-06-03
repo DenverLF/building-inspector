@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { INSPECTORS } from '@/lib/inspectors'
 import { logActivity } from '@/lib/activity'
+import MicButton from '@/components/MicButton'
 
 const STAGES = [
   { value: 'fire_installation', label: 'Fire Installation' },
@@ -130,7 +131,10 @@ export default function NewTaskPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-sm font-medium text-gray-700">Notes</label>
+                <MicButton onText={t => set('description', (form.description ? form.description + ' ' : '') + t)} />
+              </div>
               <textarea
                 value={form.description}
                 onChange={e => set('description', e.target.value)}
