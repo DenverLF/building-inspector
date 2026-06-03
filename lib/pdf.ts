@@ -1,5 +1,5 @@
 // PDF generation helpers — runs client-side only (browser)
-import type { Inspection, KmLog, Notice, NoticeStatus } from '@/lib/types'
+import type { Inspection, KmLog, Notice, NoticeStatus, NoticeAttachment } from '@/lib/types'
 
 const STAGE_LABEL: Record<string, string> = {
   fire_installation: 'Fire Installation',
@@ -181,7 +181,21 @@ export async function generateKmReport(
   doc.save(`km-log-${month}.pdf`)
 }
 
-export async function generateNotice(notice: Notice) {
+async function fetchImageDataUrl(url: string): Promise<string | null> {
+  try {
+    const resp = await fetch(url)
+    const blob = await resp.blob()
+    return await new Promise<string>(resolve => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
+export async function generateNotice(notice: Notice, attachments: NoticeAttachment[] = []) {
   const { jsPDF } = await import('jspdf')
 
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
@@ -319,15 +333,79 @@ export async function generateNotice(notice: Notice) {
     y += 22
   }
 
-  // Signature line
-  y += 4
-  doc.setDrawColor(180, 180, 180)
-  doc.line(14, y + 12, 80, y + 12)
-  doc.setFontSize(8)
-  doc.setTextColor(120, 120, 120)
-  doc.text('Authorised Signatory', 14, y + 17)
-  doc.text('Municipality of Excellence — Building Inspectorate', 196, y + 17, { align: 'right' })
+  // Fetch signatures if available
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
+  const ownerSigUrl = notice.owner_signature_path
+    ? `${supabaseUrl}/storage/v1/object/public/notice-files/${notice.owner_signature_path}`
+    : null
+  const inspectorSigUrl = notice.inspector_signature_path
+    ? `${supabaseUrl}/storage/v1/object/public/notice-files/${notice.inspector_signature_path}`
+    : null
+  const [ownerSigData, inspectorSigData] = await Promise.all([
+    ownerSigUrl ? fetchImageDataUrl(ownerSigUrl) : Promise.resolve(null),
+    inspectorSigUrl ? fetchImageDataUrl(inspectorSigUrl) : Promise.resolve(null),
+  ])
+
+  // Signature section
+  y += 6
+  doc.setDrawColor(220, 220, 220)
+  doc.line(14, y, 196, y)
+  y += 8
+
+  // Owner signature box
+  doc.setFillColor(250, 250, 250)
+  doc.roundedRect(14, y, 85, 32, 2, 2, 'F')
+  doc.setFontSize(7)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(100, 100, 100)
+  doc.text('PROPERTY OWNER / REPRESENTATIVE', 56, y + 6, { align: 'center' })
+  if (ownerSigData) {
+    doc.addImage(ownerSigData, 'PNG', 16, y + 8, 81, 16)
+  }
+  doc.setDrawColor(160, 160, 160)
+  doc.line(18, y + 26, 96, y + 26)
+  doc.setFontSize(7)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(140, 140, 140)
+  doc.text('Signature', 18, y + 30)
+  doc.text(`Date: ${new Date().toLocaleDateString('en-ZA')}`, 70, y + 30, { align: 'right' })
+
+  // Inspector signature box
+  doc.setFillColor(250, 250, 250)
+  doc.roundedRect(111, y, 85, 32, 2, 2, 'F')
+  doc.setFontSize(7)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(100, 100, 100)
+  doc.text('BUILDING INSPECTOR', 153, y + 6, { align: 'center' })
+  if (inspectorSigData) {
+    doc.addImage(inspectorSigData, 'PNG', 113, y + 8, 81, 16)
+  }
+  doc.setDrawColor(160, 160, 160)
+  doc.line(115, y + 26, 193, y + 26)
+  doc.setFontSize(7)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(140, 140, 140)
+  doc.text('Signature', 115, y + 30)
+  doc.text('Municipality of Excellence', 193, y + 30, { align: 'right' })
   doc.setTextColor(0, 0, 0)
+  y += 40
+
+  // Attachments list
+  const photos = attachments.filter(a => a.file_type === 'photo')
+  const documents = attachments.filter(a => a.file_type === 'document')
+  if (attachments.length > 0) {
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(80, 80, 80)
+    doc.text('ATTACHMENTS', 14, y)
+    y += 5
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(60, 60, 60)
+    if (photos.length > 0) doc.text(`Photos (${photos.length}): ${photos.map(p => p.file_name).join(', ')}`, 14, y, { maxWidth: 182 }), y += 5
+    if (documents.length > 0) doc.text(`Documents (${documents.length}): ${documents.map(d => d.file_name).join(', ')}`, 14, y, { maxWidth: 182 }), y += 5
+    doc.setTextColor(0, 0, 0)
+  }
 
   // Page number
   doc.setFontSize(7)

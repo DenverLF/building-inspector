@@ -78,9 +78,22 @@ export interface Notice {
   remedy_deadline: string | null
   status: NoticeStatus
   sent_at: string | null
+  owner_signature_path: string | null
+  inspector_signature_path: string | null
   created_by: string | null
   created_at: string
   updated_at: string
+}
+
+export type NoticeAttachmentType = 'photo' | 'document'
+
+export interface NoticeAttachment {
+  id: string
+  notice_id: string
+  file_name: string
+  storage_path: string
+  file_type: NoticeAttachmentType
+  created_at: string
 }
 
 export type ActivityAction = 'created' | 'updated' | 'status_changed' | 'outcome_changed' | 'deleted'
