@@ -17,13 +17,22 @@ export default function LoginPage() {
     e.preventDefault()
     setError(null)
     setLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      setError(error.message)
+    try {
+      const supabase = createClient()
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Connection timed out. Check your internet connection and try again.')), 15000)
+      )
+      const signIn = supabase.auth.signInWithPassword({ email, password })
+      const { error } = await Promise.race([signIn, timeout]) as Awaited<typeof signIn>
+      if (error) {
+        setError(error.message)
+      } else {
+        router.push('/dashboard')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign in failed. Please try again.')
+    } finally {
       setLoading(false)
-    } else {
-      router.push('/dashboard')
     }
   }
 
