@@ -1,7 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 type Step = 'email' | 'sent'
 
@@ -17,7 +20,7 @@ export default function LoginPage() {
     setError(null)
     setLoading(true)
     try {
-      const supabase = createClient()
+      const supabase = createSupabaseClient(SUPABASE_URL, SUPABASE_KEY)
       const { error: err } = await supabase.auth.signInWithOtp({
         email,
         options: {
@@ -29,8 +32,8 @@ export default function LoginPage() {
       } else {
         setStep('sent')
       }
-    } catch {
-      setError('Could not send link. Check your connection and try again.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
