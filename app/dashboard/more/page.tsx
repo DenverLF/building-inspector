@@ -2,8 +2,21 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getInitials } from '@/lib/inspectors'
 import type { Profile } from '@/lib/types'
+import LocationSharingToggle from '@/components/LocationSharingToggle'
 
 const MENU = [
+  {
+    label: 'Inspector Tracking',
+    description: 'Live map showing where all inspectors are right now',
+    href: '/dashboard/tracking',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+    ),
+    color: 'bg-teal-50 text-teal-600',
+  },
   {
     label: "Today's Route",
     description: 'Optimised inspection route with one-tap navigation',
@@ -111,14 +124,17 @@ export default async function MorePage() {
     <div className="min-h-screen bg-gray-50">
       <div className="bg-[#1a1745] px-5 pt-10 pb-6">
         <h1 className="text-white text-xl font-bold mb-4">More</h1>
-        <div className="flex items-center gap-3 bg-white/10 rounded-2xl px-4 py-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-            {initials}
+        <div className="bg-white/10 rounded-2xl px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+              {initials}
+            </div>
+            <div>
+              <p className="text-white font-semibold text-sm">{p?.full_name ?? 'Inspector'}</p>
+              <p className="text-purple-300 text-xs capitalize">{p?.role ?? 'inspector'}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-white font-semibold text-sm">{p?.full_name ?? 'Inspector'}</p>
-            <p className="text-purple-300 text-xs capitalize">{p?.role ?? 'inspector'}</p>
-          </div>
+          <LocationSharingToggle fullName={p?.full_name ?? null} />
         </div>
       </div>
 
