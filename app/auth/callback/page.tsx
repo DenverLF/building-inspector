@@ -1,48 +1,31 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 
+const SB_URL = 'https://ivsvmldcounkzmbdayth.supabase.co'
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2c3ZtbGRjb3Vua3ptYmRheXRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4OTAwNjcsImV4cCI6MjA5NTQ2NjA2N30.aVwmHz5GL-y_M_NQRUSvZlZrQUMjicZ9gp99frIn12I'
+
 export default function AuthCallbackPage() {
-  const router = useRouter()
   const [message, setMessage] = useState('Signing you in…')
 
   useEffect(() => {
-    // Use the SSR browser client so the session is stored in cookies
-    // which the middleware can read
-    const supabase = createBrowserClient(
-      'https://ivsvmldcounkzmbdayth.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2c3ZtbGRjb3Vua3ptYmRheXRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4OTAwNjcsImV4cCI6MjA5NTQ2NjA2N30.aVwmHz5GL-y_M_NQRUSvZlZrQUMjicZ9gp99frIn12I',
-      { auth: { flowType: 'implicit' } }
-    )
+    const supabase = createBrowserClient(SB_URL, SB_KEY)
 
-    async function handleCallback() {
+    async function handle() {
       try {
-        const params = new URLSearchParams(window.location.search)
-        const code = params.get('code')
-
+        // PKCE code flow
+        const code = new URLSearchParams(window.location.search).get('code')
         if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code)
-          if (!error) {
-            // Hard reload so the middleware picks up the new cookie session
-            window.location.href = '/dashboard'
-            return
-          }
+          if (!error) { window.location.href = '/dashboard'; return }
         }
 
-        // Handle hash-based implicit flow (#access_token=xxx)
-        if (window.location.hash.includes('access_token')) {
-          // Give Supabase a moment to process the hash and store the session
-          await new Promise(r => setTimeout(r, 1000))
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session) {
-            window.location.href = '/dashboard'
-            return
-          }
-        }
+        // Check if already signed in via hash tokens (implicit flow)
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) { window.location.href = '/dashboard'; return }
 
-        // Wait for auth state change (fallback)
+        // Listen for auth state — handles hash tokens automatically
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
           if (session) {
             subscription.unsubscribe()
@@ -62,7 +45,7 @@ export default function AuthCallbackPage() {
       }
     }
 
-    handleCallback()
+    handle()
   }, [])
 
   return (
@@ -75,7 +58,6 @@ export default function AuthCallbackPage() {
         </div>
         <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4" />
         <p className="text-white font-semibold text-lg">{message}</p>
-        <p className="text-purple-300 text-sm mt-2">Please wait…</p>
       </div>
     </div>
   )
